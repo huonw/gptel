@@ -135,9 +135,11 @@ the response is inserted into the current buffer after point."
                                        (if stream
                                            #'gptel-curl--stream-insert-response
                                          #'gptel--insert-response))
-                         :transformer (when (with-current-buffer (plist-get info :buffer)
-                                              (derived-mode-p 'org-mode))
-                                        (gptel--stream-convert-markdown->org)))
+                         ;; FIXME(huonw): just take the response literally rather than transform markdown to org
+                         :transformer nil)
+                         ;; :transformer (when (with-current-buffer (plist-get info :buffer)
+                         ;;                      (derived-mode-p 'org-mode))
+                         ;;                (gptel--stream-convert-markdown->org)))
                    info))
       (if stream
           (progn (set-process-sentinel process #'gptel-curl--stream-cleanup)
