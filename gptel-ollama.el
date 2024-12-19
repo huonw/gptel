@@ -75,25 +75,38 @@ Intended for internal use only.")
 
 (cl-defmethod gptel--request-data ((_backend gptel-ollama) prompts)
   "JSON encode PROMPTS for sending to ChatGPT."
-  (let ((prompts-plist
-         `(:model ,(gptel--model-name gptel-model)
-           :messages [,@prompts]
-           :stream ,(or (and gptel-stream gptel-use-curl
-                         (gptel-backend-stream gptel-backend))
-                     :json-false)))
-        ;; TODO num_ctx chosen according to #330, make customizable
-        (options-plist (list :num_ctx 8192)))
-    (when gptel-temperature
+  (when (and gptel--system-message
+             (not (gptel--model-capable-p 'nosystem)))
+    (push (list :role "system"
+                :content gptel--system-message)
+          prompts))
+  (let* ((prompts-plist
+          (gptel--merge-plists
+           `(:model ,(gptel--model-name gptel-model)
+             :messages [,@prompts]
+             :stream ,(or (and gptel-stream gptel-use-curl
+                               (gptel-backend-stream gptel-backend))
+                          :json-false))
+           (gptel-backend-request-params gptel-backend)
+           (gptel--model-request-params  gptel-model)))
+         ;; the initial options (if any) from request params
+         (options-plist (plist-get prompts-plist :options)))
+
+    ;; if the temperature and max-tokens aren't set as
+    ;; backend/model-specific, use the global settings
+    (when (and gptel-temperature (not (plist-get options-plist :temperature)))
       (setq options-plist
-            (plist-put options-plist :temperature
-                       gptel-temperature)))
-    (when gptel-max-tokens
+            (plist-put options-plist :temperature gptel-temperature)))
+    (when (and gptel-max-tokens (not (plist-get options-plist :num_predict)))
       (setq options-plist
-            (plist-put options-plist :num_predict
-                       gptel-max-tokens)))
-    (when options-plist
-      (plist-put prompts-plist :options options-plist))
-    prompts-plist))
+            (plist-put options-plist :num_predict gptel-max-tokens)))
+    (plist-put prompts-plist :options options-plist)))
+
+(cl-defmethod gptel--parse-list ((_backend gptel-ollama) prompt-list)
+  (cl-loop for text in prompt-list
+           for role = t then (not role)
+           if text collect
+           (list :role (if role "user" "assistant") :content text)))
 
 (cl-defmethod gptel--parse-buffer ((_backend gptel-ollama) &optional max-entries)
   (let ((prompts) (prop)
@@ -129,9 +142,7 @@ Intended for internal use only.")
                   :content
                   (string-trim (buffer-substring-no-properties (point-min) (point-max))))
             prompts))
-    (cons (list :role "system"
-                :content gptel--system-message)
-          prompts)))
+    prompts))
 
 (defun gptel--ollama-parse-multipart (parts)
   "Convert a multipart prompt PARTS to the Ollama API format.
@@ -177,7 +188,7 @@ If INJECT-MEDIA is non-nil wrap it with base64-encoded media files in the contex
 
 ;;;###autoload
 (cl-defun gptel-make-ollama
-    (name &key curl-args header key models stream
+    (name &key curl-args header key models stream request-params
           (host "localhost:11434")
           (protocol "http")
           (endpoint "/api/chat"))
@@ -227,13 +238,18 @@ KEY (optional) is a variable whose value is the API key, or
 function that returns the key.  This is typically not required
 for local models like Ollama.
 
+REQUEST-PARAMS (optional) is a plist of additional HTTP request
+parameters (as plist keys) and values supported by the API.  Use
+these to set parameters that gptel does not provide user options
+for.
+
 Example:
 -------
 
  (gptel-make-ollama
    \"Ollama\"
    :host \"localhost:11434\"
-   :models \\='(\"mistral:latest\")
+   :models \\='(mistral:latest)
    :stream t)"
   (declare (indent 1))
   (let ((backend (gptel--make-ollama
@@ -246,6 +262,7 @@ Example:
                   :protocol protocol
                   :endpoint endpoint
                   :stream stream
+                  :request-params request-params
                   :url (if protocol
                            (concat protocol "://" host endpoint)
                          (concat host endpoint)))))
