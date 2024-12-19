@@ -284,17 +284,17 @@ Also format its value in the Transient menu."
   ;; :incompatible '(("-m" "-n" "-k" "-e"))
   [:description
    (lambda ()
-     (concat
-      (string-replace
-       "\n" "⮐ "
-       (truncate-string-to-width
-        gptel--system-message (max (- (window-width) 12) 14) nil nil t))
-      "\n"))
-   ["Instructions"
+     (string-replace
+      "\n" "⮐ "
+      (truncate-string-to-width
+       gptel--system-message (max (- (window-width) 12) 14) nil nil t)))
+   [""
+    "Instructions"
     ("s" "Set system message" gptel-system-prompt :transient t)
     (gptel--infix-add-directive)]
-   ["Context"
-    :pad-keys t
+   [:pad-keys t
+    ""
+    "Context"
     (gptel--infix-context-add-region)
     (gptel--infix-context-add-buffer)
     (gptel--infix-context-add-file)
